@@ -1,0 +1,112 @@
+# Practical Machine Learning Course Project
+### Steven Liew
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+## Data Sources
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project comes from this original source: http://groupware.les.inf.puc-rio.br/har. 
+
+## Data Preprocessing  
+```{r, cache = T, message=FALSE, warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(e1071)
+```
+  
+### Read the Data
+Read the files (pml-training.csv, pml-testing.csv) into two data frames.  
+```{r, cache = T}
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+Training Data: 19622 observations and 160 variables
+Testing Data: 20 observations and 160 variables. 
+The "classe" variable in the training set is the outcome to predict. 
+
+### Clean the data
+Remove observations with (i) missing values and (ii) variables not required.
+```{r, cache = T}
+sum(complete.cases(trainRaw))
+```
+(i) remove columns that contain NA missing values.
+```{r, cache = T}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+```  
+(ii) remove columns that is not required for accelerometer measurements.
+```{r, cache = T}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+dim(trainCleaned)
+dim(testCleaned)
+```
+Cleaned Training Data: 19622 observations and 53 variables
+Cleaned Testing Data: 20 observations and 53 variables. 
+The "classe" variable is still in the cleaned training set.
+
+### Slice the data
+Split the cleaned training set into a pure training data set (60%) and a validation data set (40%). Validation data set is used to conduct cross validation.
+```{r, cache = T}
+set.seed(22519) # For reproducibile purpose
+inTrain <- createDataPartition(trainCleaned$classe, p=0.60, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+
+## Using ML algorithms for prediction: Decision Tree
+
+```{r}
+modFitA1 <- rpart(classe ~ ., data=trainData, method="class")
+predictionsA1 <- predict(modFitA1, testData, type = "class")
+# Plot of the Decision Tree
+rpart.plot(modFitA1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+confusionMatrix(predictionsA1, testData$classe)
+```
+
+## Using ML algorithms for prediction: Random Forests
+
+```{r}
+modFitB1 <- randomForest(classe ~. , data=trainData)
+predictionsB1 <- predict(modFitB1, testData, type = "class")
+confusionMatrix(predictionsB1, testData$classe)
+```
+
+As expected, Random Forest algorithm performed better than Decision Trees.
+Accuracy for Random Forest model was 0.994 (95% CI: (0.992, 0.996)) compared to 0.758 (95% CI: (0.748, 0.767)) for Decision Tree model. As such, the Random Forest model is chosen. Our test data set comprises 20 cases. With an accuracy of above 99% on our cross-validation data, we can expect very low mis-classification of test samples.
+
+## Submission
+```{r}
+# predict outcome levels on the original Testing data set using Random Forest algorithm
+predictfinal <- predict(modFitB1, testCleaned[, -length(names(testCleaned))], type = "class")
+predictfinal
+```
+
+```{r}
+# Write files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictfinal)
+```
